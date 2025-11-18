@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 function useApi() {
   const baseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
@@ -8,6 +9,7 @@ function useApi() {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate()
   const { baseUrl, headers } = useApi()
   const [profile, setProfile] = useState(null)
   const [cfg, setCfg] = useState(null)
@@ -29,10 +31,12 @@ export default function Dashboard() {
         setHistory(await h.json())
       } catch (e) {
         console.error(e)
+        navigate('/auth')
       }
     }
     init()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseUrl])
 
   const generate = async () => {
     setError('')
@@ -51,7 +55,11 @@ export default function Dashboard() {
 
   const copyCmd = async () => {
     if (!result) return
-    await navigator.clipboard.writeText(`git commit -m "${result.message.replace(/"/g, '\\"')}"`)
+    // Use multiple -m flags to preserve body/footer sections
+    const sections = String(result.message).split(/\n\n+/)
+    const parts = sections.map(s => `-m "${s.replace(/"/g, '\\"')}"`).join(' ')
+    const cmd = `git commit ${parts}`
+    await navigator.clipboard.writeText(cmd)
     setCopy('Copied!')
     setTimeout(()=>setCopy('Copy commit command'), 1500)
   }
@@ -62,9 +70,14 @@ export default function Dashboard() {
   }
 
   const deleteItem = async (id) => {
-    await fetch(`${baseUrl}/history/${id}`, { method: 'DELETE', headers })
-    const h = await fetch(`${baseUrl}/history`, { headers })
-    setHistory(await h.json())
+    try {
+      const res = await fetch(`${baseUrl}/history/${id}`, { method: 'DELETE', headers })
+      if (!res.ok) throw new Error('Delete failed')
+      const h = await fetch(`${baseUrl}/history`, { headers })
+      setHistory(await h.json())
+    } catch (e) {
+      console.error(e)
+    }
   }
 
   return (
@@ -118,7 +131,9 @@ export default function Dashboard() {
               <div className="mt-6">
                 <div className="text-slate-300 mb-1">Commit message</div>
                 <pre className="bg-black/40 border border-slate-800 rounded p-4 font-mono whitespace-pre-wrap">{result.message}</pre>
-                <div className="text-slate-400 text-sm mt-2">Generations left this month: {result.usage_left}</div>
+                {typeof result.usage_left === 'number' && (
+                  <div className="text-slate-400 text-sm mt-2">Generations left this month: {result.usage_left}</div>
+                )}
               </div>
             )}
           </div>
@@ -131,7 +146,7 @@ export default function Dashboard() {
                 <div key={h.id} className="border border-slate-800 rounded p-3">
                   <div className="text-emerald-400 font-mono text-sm whitespace-pre-wrap">{h.message}</div>
                   <div className="flex justify-between items-center mt-2 text-xs text-slate-400">
-                    <div>{new Date(h.created_at).toLocaleString()}</div>
+                    <div>{h.created_at ? new Date(h.created_at).toLocaleString() : ''}</div>
                     <button onClick={()=>deleteItem(h.id)} className="text-red-400">Delete</button>
                   </div>
                 </div>
